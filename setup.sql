@@ -1,22 +1,23 @@
 -- Genie Space Training Data Setup Script
--- Intermountain Health - Claims Analytics
+-- Healthcare Claims Analytics
 --
 -- This script creates synthetic claims data for the Genie Space training workshop.
 -- The data is calibrated to match the training examples:
 --   - Denial rate: ~8.2%
 --   - First-pass rate: ~94.2%
 --   - 50,000 claims across 18 months
---   - IH facility names, payer names, service lines
+--   - Healthcare facility names, payer names, service lines
 --
 -- Prerequisites:
 --   1. Create the catalog and schema before running this script:
---      CREATE CATALOG IF NOT EXISTS ih_genie_training;
---      CREATE SCHEMA IF NOT EXISTS ih_genie_training.claims_analytics;
---   2. Run this script on a SQL warehouse or cluster with access to the catalog
+--      CREATE CATALOG IF NOT EXISTS genie_training;
+--      CREATE SCHEMA IF NOT EXISTS genie_training.claims_analytics;
+--   2. Update all references below from 'ih_genie_training' to your catalog name
+--   3. Run this script on a SQL warehouse or cluster with access to the catalog
 --
 -- Usage:
---   Option A: Run each statement one at a time in a Databricks SQL editor
---   Option B: Use the setup.py script which runs these statements via the Databricks SDK
+--   Run each statement one at a time in a Databricks SQL editor,
+--   or put each statement in its own notebook cell
 
 -- ============================================================================
 -- FACILITIES
@@ -24,10 +25,10 @@
 
 CREATE OR REPLACE TABLE ih_genie_training.claims_analytics.facilities (
   facility_id INT NOT NULL,
-  facility_name STRING COMMENT 'Full name of the Intermountain facility where service was rendered. Common abbreviations: IMC = Intermountain Medical Center, LDS = LDS Hospital, PCMC = Primary Childrens Medical Center',
+  facility_name STRING COMMENT 'Full name of the facility where service was rendered. Common abbreviations: IMC = Intermountain Medical Center, LDS = LDS Hospital, PCMC = Primary Childrens Medical Center',
   facility_type STRING COMMENT 'Type of facility: Hospital, Clinic, Urgent Care, Specialty Center',
   city STRING,
-  state_code STRING COMMENT 'Two-letter state code. Intermountain service area includes UT, ID, NV, CO, MT, WY, KS, NE'
+  state_code STRING COMMENT 'Two-letter state code. Service area includes UT, ID, NV, CO, MT, WY, KS, NE'
 );
 
 INSERT INTO ih_genie_training.claims_analytics.facilities VALUES
@@ -137,7 +138,7 @@ FROM range(1, 5001) t(id);
 CREATE OR REPLACE TABLE ih_genie_training.claims_analytics.claims (
   claim_id STRING COMMENT 'Unique identifier for each claim submission',
   claim_type STRING COMMENT 'Type of claim: Professional, Facility, or Pharmacy',
-  receipt_date DATE COMMENT 'Date the claim was received by Intermountain. Used as the basis for turnaround time calculations',
+  receipt_date DATE COMMENT 'Date the claim was received. Used as the basis for turnaround time calculations',
   adjudication_date DATE COMMENT 'Date the claim was adjudicated. NULL for claims still pending',
   initial_decision STRING COMMENT 'The adjudication outcome at first review. Values: APPROVED, DENIED, PENDING, PARTIAL. Does not reflect appeal outcomes',
   appeal_decision STRING COMMENT 'Outcome after appeal if applicable. Values: OVERTURNED, UPHELD, NULL (no appeal filed)',
@@ -222,41 +223,14 @@ ALTER TABLE ih_genie_training.claims_analytics.claims ADD CONSTRAINT fk_claims_f
 ALTER TABLE ih_genie_training.claims_analytics.claims ADD CONSTRAINT fk_claims_payers FOREIGN KEY (payer_id) REFERENCES ih_genie_training.claims_analytics.payers(payer_id);
 
 -- ============================================================================
--- PRE-JOINED VIEW (optional - for reference/comparison)
+-- TABLE-LEVEL COMMENTS
 -- ============================================================================
 
-CREATE OR REPLACE VIEW ih_genie_training.claims_analytics.claims_summary
-COMMENT 'Pre-joined claims view combining claims with patient, provider, facility, and payer dimensions. Use for claims processing questions: denial rates, turnaround times, first-pass rates, payer performance.'
-AS
-SELECT
-  c.claim_id,
-  c.claim_type,
-  c.receipt_date,
-  c.adjudication_date,
-  c.initial_decision,
-  c.appeal_decision,
-  c.paid_amount,
-  c.billed_amount,
-  c.first_pass_rate,
-  c.voided_flag,
-  c.test_flag,
-  c.service_line_code,
-  DATEDIFF(c.adjudication_date, c.receipt_date) as turnaround_days,
-  p.patient_age_group,
-  p.patient_state,
-  p.patient_gender,
-  pr.provider_name,
-  pr.provider_specialty,
-  f.facility_name,
-  f.facility_type,
-  f.state_code as facility_state,
-  py.payer_name,
-  py.payer_type
-FROM ih_genie_training.claims_analytics.claims c
-LEFT JOIN ih_genie_training.claims_analytics.patients p ON c.patient_id = p.patient_id
-LEFT JOIN ih_genie_training.claims_analytics.providers pr ON c.provider_id = pr.provider_id
-LEFT JOIN ih_genie_training.claims_analytics.facilities f ON c.facility_id = f.facility_id
-LEFT JOIN ih_genie_training.claims_analytics.payers py ON c.payer_id = py.payer_id;
+COMMENT ON TABLE ih_genie_training.claims_analytics.facilities IS 'Healthcare facilities where services are rendered. Includes hospitals, clinics, and specialty centers across the service area.';
+COMMENT ON TABLE ih_genie_training.claims_analytics.payers IS 'Insurance payers including commercial carriers, Medicare, Medicaid, and self-pay.';
+COMMENT ON TABLE ih_genie_training.claims_analytics.providers IS 'Rendering providers with name, specialty, and NPI.';
+COMMENT ON TABLE ih_genie_training.claims_analytics.patients IS 'Synthetic patient records with demographics. No real patient data.';
+COMMENT ON TABLE ih_genie_training.claims_analytics.claims IS 'Claims fact table with adjudication outcomes, payment amounts, and quality flags. Joins to patients, providers, facilities, and payers via foreign keys.';
 
 -- ============================================================================
 -- VERIFICATION
