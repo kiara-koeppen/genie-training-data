@@ -1,25 +1,27 @@
-# Genie Space Training Data - Intermountain Health
+# Genie Space Training Data
 
-Synthetic claims data for the Genie Space training workshop. This data supports all three sessions of the Data Analyst training track.
+Synthetic healthcare claims data for a Genie Space training workshop. Supports a 3-session Data Analyst training track that teaches discovery, configuration, and testing of Databricks Genie Spaces.
 
 ## What's Included
 
 | Table | Rows | Description |
 |---|---|---|
-| `facilities` | 10 | IH facility names (IMC, LDS, PCMC, McKay-Dee, etc.) |
-| `payers` | 10 | Payer names (BCBS of Utah, UnitedHealthcare, Aetna, etc.) |
-| `providers` | 15 | Provider names with specialties |
+| `facilities` | 10 | Hospital and clinic names with locations |
+| `payers` | 10 | Insurance payer names (commercial, Medicare, Medicaid, self-pay) |
+| `providers` | 15 | Provider names with medical specialties |
 | `patients` | 5,000 | Synthetic patients with age groups, states, gender |
-| `claims` | 50,000 | 18 months of claims data with all training-relevant fields |
+| `claims` | 50,000 | 18 months of claims data with adjudication, denial, and payment fields |
 | `claims_summary` | (view) | Pre-joined view combining all tables |
 
-## Key Metrics (calibrated to match training examples)
+## Key Metrics
+
+The data is calibrated to produce realistic healthcare claims metrics:
 
 - **Denial rate:** ~8.2% (Professional + Facility claims, excluding voided/test)
 - **First-pass rate:** ~94.2%
 - **Date range:** 18 months from January 2025
-- **IH facilities:** Intermountain Medical Center (IMC), LDS Hospital, Primary Childrens Medical Center (PCMC), McKay-Dee, Dixie Regional, Utah Valley, Logan Regional, Cassia Regional, St. James, Cedar City
-- **Payers:** BCBS of Utah, UnitedHealthcare, Aetna, Cigna, Regence, Medicare, Medicaid, SelectHealth, DMBA, Self-Pay
+- **Claim types:** Professional (~45%), Facility (~45%), Pharmacy (~10%)
+- **Payers:** Mix of commercial, Medicare, Medicaid, and self-pay
 
 ## Setup
 
@@ -31,12 +33,14 @@ Synthetic claims data for the Genie Space training workshop. This data supports 
 
 ### Step 1: Create the catalog and schema
 
-Run these in a SQL editor (requires admin privileges):
+Run these in a SQL editor (requires admin privileges). Replace the catalog/schema names with your own if needed:
 
 ```sql
-CREATE CATALOG IF NOT EXISTS ih_genie_training;
-CREATE SCHEMA IF NOT EXISTS ih_genie_training.claims_analytics;
+CREATE CATALOG IF NOT EXISTS genie_training;
+CREATE SCHEMA IF NOT EXISTS genie_training.claims_analytics;
 ```
+
+Then update the catalog/schema references in `setup.sql` to match (find and replace `ih_genie_training` with your catalog name).
 
 ### Step 2: Run the setup script
 
@@ -60,34 +64,58 @@ Run the verification query at the bottom of `setup.sql` to confirm:
 
 ## Training Usage
 
-### Session 1: Discovery Mindset & Elicitation
-- The "Wrong Genie Space" demo uses these tables with minimal configuration
-- The "Well Configured Genie Space" demo uses these tables with full entity matching, SQL expressions, and instructions
+This data supports a 3-session Genie Space training workshop:
 
-### Session 2: The Discovery Framework End-to-End
-- The Dana scenario (Claims Ops Manager) is built around this data
-- Workbook 3 (Data Mapping) references these UC table schemas
-- Workbook 4 (Prototype Review) tests against a Genie Space connected to this data
+- **Session 1 (90 min):** Discovery Mindset & Elicitation - uses two Genie Spaces (one under-configured, one well-configured) to demonstrate the impact of discovery
+- **Session 2 (2 hr):** The Discovery Framework End-to-End - the training scenario is built around this data; participants reference the UC table schemas during data mapping exercises
+- **Session 3 (90 min):** From Discovery to Configuration - the facilitator builds a Genie Space live from these tables while participants watch and then test together
 
-### Session 3: From Discovery to Configuration
-- The facilitator builds a Genie Space live using these tables
-- Live testing runs against this data
+## Genie Space Setup
 
-## Genie Space Configuration
+After loading the data, create two Genie Spaces:
 
-After loading the data, you'll need two Genie Spaces:
-
-### 1. "Training Demo - Wrong Genie Space"
+### 1. "Wrong" Genie Space (under-configured)
 - Add all 5 tables
 - No instructions, no entity matching, no SQL expressions
-- This demonstrates what happens when you skip discovery
+- Demonstrates what happens when you skip discovery
 
-### 2. "Training Demo - Well Configured Genie Space"
+### 2. "Well Configured" Genie Space
 - Add all 5 tables
-- Configure entity matching (IMC, LDS, PCMC, Blue Cross, United, cardiology, member/patient/enrollee)
-- Add SQL expressions (Denial Rate, First Pass Rate, Average Turnaround Time)
-- Add text instructions (scope, disambiguation, terminology, exclusions)
-- Add joins (claims to patients, providers, facilities, payers)
+- Configure entity matching for facility abbreviations, payer names, service lines, and domain terms
+- Add SQL expressions for key metrics (Denial Rate, First Pass Rate, Average Turnaround Time)
+- Add text instructions (scope boundaries, disambiguation, terminology, metric exclusions)
+- Add joins between tables
 - Add 10 sample questions
 
-See the instructor guide for Session 3 for the full configuration checklist.
+## Data Details
+
+### Tables and Relationships
+
+```
+claims (fact table)
+  -> patients     (via patient_id)
+  -> providers    (via provider_id)
+  -> facilities   (via facility_id)
+  -> payers       (via payer_id)
+```
+
+### Key Columns (claims table)
+
+| Column | Description |
+|---|---|
+| `claim_id` | Unique claim identifier (CLM-0000001 format) |
+| `claim_type` | Professional, Facility, or Pharmacy |
+| `receipt_date` | Date claim was received |
+| `adjudication_date` | Date claim was adjudicated (NULL if pending) |
+| `initial_decision` | APPROVED, DENIED, PENDING, or PARTIAL |
+| `appeal_decision` | OVERTURNED, UPHELD, or NULL |
+| `paid_amount` | Amount paid (0 for denied, NULL for pending) |
+| `billed_amount` | Amount billed by provider |
+| `first_pass_rate` | Y = clean claim (passed all edits), N = required rework |
+| `voided_flag` | Y = voided, N = active |
+| `test_flag` | Y = test claim, N = real |
+| `service_line_code` | Cardiovascular Services, Orthopedics, Primary Care, etc. |
+
+## License
+
+This is synthetic data generated for training purposes. No real patient, provider, or claims data is included.
