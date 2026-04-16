@@ -233,6 +233,125 @@ COMMENT ON TABLE ih_genie_training.claims_analytics.patients IS 'Synthetic patie
 COMMENT ON TABLE ih_genie_training.claims_analytics.claims IS 'Claims fact table with adjudication outcomes, payment amounts, and quality flags. Joins to patients, providers, facilities, and payers via foreign keys.';
 
 -- ============================================================================
+-- METRIC VIEW: claims_metrics
+-- The governed metrics layer for claims analytics. Encodes standard
+-- business definitions (denial rate, first-pass rate, turnaround time, etc.)
+-- in one place so every downstream consumer gets the same answers.
+-- ============================================================================
+
+CREATE OR REPLACE VIEW ih_genie_training.claims_analytics.claims_metrics
+WITH METRICS
+LANGUAGE YAML
+AS $$
+  version: 1.1
+  comment: "Governed claims analytics metrics. Standard measures for denial rates, first-pass rates, turnaround times, and payment analysis. Excludes voided and test claims globally."
+  source: ih_genie_training.claims_analytics.claims
+  filter: voided_flag = 'N' AND test_flag = 'N'
+
+  joins:
+    - name: patients
+      source: ih_genie_training.claims_analytics.patients
+      on: source.patient_id = patients.patient_id
+    - name: providers
+      source: ih_genie_training.claims_analytics.providers
+      on: source.provider_id = providers.provider_id
+    - name: facilities
+      source: ih_genie_training.claims_analytics.facilities
+      on: source.facility_id = facilities.facility_id
+    - name: payers
+      source: ih_genie_training.claims_analytics.payers
+      on: source.payer_id = payers.payer_id
+
+  dimensions:
+    - name: Claim Type
+      expr: source.claim_type
+      comment: "Professional, Facility, or Pharmacy"
+    - name: Service Line
+      expr: source.service_line_code
+      comment: "Clinical service category: Cardiovascular Services, Orthopedics, Primary Care, etc."
+    - name: Initial Decision
+      expr: source.initial_decision
+      comment: "First adjudication outcome: APPROVED, DENIED, PENDING, PARTIAL"
+    - name: Appeal Decision
+      expr: source.appeal_decision
+      comment: "Appeal outcome if filed: OVERTURNED, UPHELD, or NULL (no appeal)"
+    - name: Receipt Month
+      expr: DATE_TRUNC('MONTH', source.receipt_date)
+      comment: "Month the claim was received"
+    - name: Adjudication Month
+      expr: DATE_TRUNC('MONTH', source.adjudication_date)
+      comment: "Month the claim was adjudicated"
+    - name: Receipt Date
+      expr: source.receipt_date
+      comment: "Date the claim was received"
+    - name: Payer Name
+      expr: payers.payer_name
+      comment: "Insurance payer: BCBS of Utah, UnitedHealthcare, Medicare, etc."
+    - name: Payer Type
+      expr: payers.payer_type
+      comment: "Payer category: Commercial, Medicare, Medicaid, Self-Pay"
+    - name: Facility Name
+      expr: facilities.facility_name
+      comment: "Facility where service was rendered"
+    - name: Facility Type
+      expr: facilities.facility_type
+      comment: "Hospital, Clinic, Urgent Care, or Specialty Center"
+    - name: Facility State
+      expr: facilities.state_code
+      comment: "Two-letter state code of the facility"
+    - name: Provider Name
+      expr: providers.provider_name
+      comment: "Rendering provider full name"
+    - name: Provider Specialty
+      expr: providers.provider_specialty
+      comment: "Medical specialty of the rendering provider"
+    - name: Patient Age Group
+      expr: patients.patient_age_group
+      comment: "Age band: 0-17, 18-34, 35-49, 50-64, 65+"
+    - name: Patient State
+      expr: patients.patient_state
+      comment: "State of patient residence"
+    - name: Patient Gender
+      expr: patients.patient_gender
+      comment: "M or F"
+
+  measures:
+    - name: Total Claims
+      expr: COUNT(1)
+      comment: "Total number of claims (excluding voided and test)"
+    - name: Denied Claims
+      expr: COUNT(1) FILTER (WHERE source.initial_decision = 'DENIED')
+      comment: "Number of claims denied at initial decision"
+    - name: Approved Claims
+      expr: COUNT(1) FILTER (WHERE source.initial_decision = 'APPROVED')
+      comment: "Number of claims approved at initial decision"
+    - name: Denial Rate
+      expr: COUNT(1) FILTER (WHERE source.initial_decision = 'DENIED' AND source.claim_type IN ('Professional', 'Facility')) * 100.0 / NULLIF(COUNT(1) FILTER (WHERE source.claim_type IN ('Professional', 'Facility')), 0)
+      comment: "Governed denial rate for Professional and Facility claims only. Excludes Pharmacy to prevent inflated numbers. Expected ~8.2%"
+    - name: First Pass Rate
+      expr: COUNT(1) FILTER (WHERE source.first_pass_rate = 'Y') * 100.0 / COUNT(1)
+      comment: "Percentage of claims passing all edits on first submission. Expected ~94.2%"
+    - name: Total Paid Amount
+      expr: SUM(source.paid_amount)
+      comment: "Total dollars paid across all claims"
+    - name: Total Billed Amount
+      expr: SUM(source.billed_amount)
+      comment: "Total dollars billed by providers"
+    - name: Payment Ratio
+      expr: SUM(source.paid_amount) / NULLIF(SUM(source.billed_amount), 0)
+      comment: "Ratio of paid to billed amounts"
+    - name: Average Turnaround Days
+      expr: AVG(DATEDIFF(source.adjudication_date, source.receipt_date))
+      comment: "Average days from claim receipt to adjudication"
+    - name: Appeal Overturn Rate
+      expr: COUNT(1) FILTER (WHERE source.appeal_decision = 'OVERTURNED') * 100.0 / NULLIF(COUNT(1) FILTER (WHERE source.appeal_decision IS NOT NULL), 0)
+      comment: "Percentage of filed appeals that were overturned"
+    - name: Average Paid Amount
+      expr: AVG(source.paid_amount)
+      comment: "Average payment per claim"
+$$;
+
+-- ============================================================================
 -- VERIFICATION
 -- ============================================================================
 

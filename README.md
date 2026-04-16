@@ -11,7 +11,7 @@ Synthetic healthcare claims data for a Genie Space training workshop. Supports a
 | `providers` | 15 | Provider names with medical specialties |
 | `patients` | 5,000 | Synthetic patients with age groups, states, gender |
 | `claims` | 50,000 | 18 months of claims data with adjudication, denial, and payment fields |
-| `claims_summary` | (view) | Pre-joined view combining all tables |
+| `claims_metrics` | (metric view) | Governed metrics layer with standard measure definitions |
 
 ## Key Metrics
 
@@ -49,7 +49,7 @@ Open `setup.sql` in a Databricks SQL editor and run each statement sequentially.
 1. Creates 5 tables (facilities, payers, providers, patients, claims)
 2. Inserts all data
 3. Sets primary keys and foreign keys
-4. Creates the pre-joined `claims_summary` view
+4. Creates the `claims_metrics` metric view with governed measure definitions
 
 **Note:** The SQL statements must be run one at a time (Databricks SQL does not support multiple statements separated by semicolons in a single execution). Either:
 - Copy and paste each statement individually
@@ -86,6 +86,52 @@ After loading the data, create two Genie Spaces:
 - Add text instructions (scope boundaries, disambiguation, terminology, metric exclusions)
 - Add joins between tables
 - Add 10 sample questions
+
+## Metric View: `claims_metrics`
+
+The `claims_metrics` metric view is the governed metrics layer for claims analytics. It replaces the old pre-joined `claims_summary` view with something far more powerful: standard business metric definitions that Genie (and dashboards, alerts, etc.) can query directly.
+
+### What it includes
+
+**Global filter:** Excludes voided and test claims automatically, so no downstream consumer has to remember to add those filters.
+
+**Joins:** Connects the claims fact table to all four dimension tables (patients, providers, facilities, payers).
+
+**17 dimensions:** Claim Type, Service Line, Initial Decision, Appeal Decision, Receipt Month, Adjudication Month, Receipt Date, Payer Name, Payer Type, Facility Name, Facility Type, Facility State, Provider Name, Provider Specialty, Patient Age Group, Patient State, Patient Gender.
+
+**11 measures:**
+
+| Measure | Description | Expected Value |
+|---|---|---|
+| Total Claims | Count of all non-voided, non-test claims | ~49,500 |
+| Denied Claims | Claims with initial_decision = DENIED | ~4,050 |
+| Approved Claims | Claims with initial_decision = APPROVED | ~43,900 |
+| Denial Rate | % denied (Professional + Facility only) | ~8.2% |
+| First Pass Rate | % passing all edits on first submission | ~94.2% |
+| Total Paid Amount | Sum of all payments | varies |
+| Total Billed Amount | Sum of all billed charges | varies |
+| Payment Ratio | Paid / Billed | varies |
+| Average Turnaround Days | Avg days from receipt to adjudication | ~12 |
+| Appeal Overturn Rate | % of appeals overturned | ~40% |
+| Average Paid Amount | Avg payment per claim | varies |
+
+### Why a metric view instead of a regular view
+
+A regular view just pre-joins tables. A metric view encodes the business logic (what "denial rate" means, what to exclude, how to calculate it) so that every consumer gets the same answer. This is a core concept in the training: define once, govern centrally, use everywhere.
+
+### Querying
+
+Metric views use the `MEASURE()` function:
+
+```sql
+SELECT
+  `Payer Name`,
+  MEASURE(`Denial Rate`) AS denial_rate,
+  MEASURE(`First Pass Rate`) AS first_pass_rate
+FROM ih_genie_training.claims_analytics.claims_metrics
+GROUP BY ALL
+ORDER BY denial_rate DESC
+```
 
 ## Data Details
 
