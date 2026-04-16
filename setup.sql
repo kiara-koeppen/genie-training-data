@@ -3,7 +3,9 @@
 --
 -- This script creates synthetic claims data for the Genie Space training workshop.
 -- The data is calibrated to match the training examples:
---   - Denial rate: ~8.2%
+--   - Denial rate (Prof + Facility, governed): ~8.2%
+--   - Denial rate (all claim types, unfiltered): ~11-12%
+--   - Pharmacy denial rate: ~40% (intentionally high to demo metric view value)
 --   - First-pass rate: ~94.2%
 --   - 50,000 claims across 18 months
 --   - Healthcare facility names, payer names, service lines
@@ -130,7 +132,9 @@ FROM range(1, 5001) t(id);
 -- ============================================================================
 -- CLAIMS (50,000 synthetic claims)
 -- Calibrated to produce:
---   Denial rate: ~8.2% (for Professional + Facility, excluding voided/test)
+--   Denial rate (Prof + Facility, excl voided/test): ~8.2% (governed metric)
+--   Denial rate (all types, no exclusions): ~11-12% (inflated, for demo)
+--   Pharmacy denial rate: ~40% (drives the inflation)
 --   First-pass rate: ~94.2%
 --   Dates: 18 months of data from Jan 2025
 -- ============================================================================
@@ -167,19 +171,26 @@ SELECT
     WHEN abs(hash(id + 200)) % 100 < 2 THEN NULL
     ELSE date_add(date_add('2025-01-01', cast(abs(hash(id + 100)) % 450 as int)), 3 + cast(abs(hash(id + 300)) % 19 as int))
   END as adjudication_date,
+  -- initial_decision: Pharmacy claims get ~40% denial rate to create a visible
+  -- contrast vs Professional/Facility at ~8.2%. This makes the unfiltered
+  -- denial rate ~11-12%, demonstrating why metric view exclusions matter.
   CASE
     WHEN abs(hash(id + 200)) % 100 < 2 THEN 'PENDING'
-    WHEN abs(hash(id + 400)) % 1000 < 82 THEN 'DENIED'
+    WHEN abs(hash(id)) % 100 >= 90 AND abs(hash(id + 400)) % 100 < 40 THEN 'DENIED'
+    WHEN abs(hash(id)) % 100 < 90 AND abs(hash(id + 400)) % 1000 < 82 THEN 'DENIED'
     WHEN abs(hash(id + 400)) % 1000 < 112 THEN 'PARTIAL'
     ELSE 'APPROVED'
   END as initial_decision,
   CASE
-    WHEN abs(hash(id + 400)) % 1000 < 82 AND abs(hash(id + 500)) % 100 < 30 THEN
+    WHEN abs(hash(id)) % 100 >= 90 AND abs(hash(id + 400)) % 100 < 40 AND abs(hash(id + 500)) % 100 < 30 THEN
+      CASE WHEN abs(hash(id + 600)) % 100 < 40 THEN 'OVERTURNED' ELSE 'UPHELD' END
+    WHEN abs(hash(id)) % 100 < 90 AND abs(hash(id + 400)) % 1000 < 82 AND abs(hash(id + 500)) % 100 < 30 THEN
       CASE WHEN abs(hash(id + 600)) % 100 < 40 THEN 'OVERTURNED' ELSE 'UPHELD' END
     ELSE NULL
   END as appeal_decision,
   CASE
-    WHEN abs(hash(id + 400)) % 1000 < 82 THEN 0.00
+    WHEN abs(hash(id)) % 100 >= 90 AND abs(hash(id + 400)) % 100 < 40 THEN 0.00
+    WHEN abs(hash(id)) % 100 < 90 AND abs(hash(id + 400)) % 1000 < 82 THEN 0.00
     WHEN abs(hash(id + 200)) % 100 < 2 THEN NULL
     ELSE round(200 + cast(abs(hash(id + 700)) % 4800 as decimal(12,2)), 2)
   END as paid_amount,
