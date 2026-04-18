@@ -45,7 +45,7 @@ CREATE CATALOG IF NOT EXISTS genie_training;
 CREATE SCHEMA IF NOT EXISTS genie_training.claims_analytics;
 ```
 
-If you use a different catalog name, find and replace `genie_training` in `setup.sql` (and `fixes/metric_view.sql`) to match.
+If you use a different catalog name, find and replace `genie_training` in `setup.sql` to match.
 
 ### Step 2: Run the setup script
 
@@ -72,7 +72,7 @@ Run the verification queries at the bottom of `setup.sql` to confirm:
 
 This data supports a 4-session Genie Space training workshop:
 
-- **Session 0 (60 min):** What is Genie — a single Space evolves through 5 progressive configuration beats (text instructions → joins → column descriptions → SQL functions → metric view). See `fixes/` and the Session 0 Instructor Guide.
+- **Session 0 (60 min):** What is Genie — a single Space evolves through 5 progressive configuration beats (text instructions → joins → column descriptions → SQL functions → metric view). See the Session 0 Instructor Guide for the live script.
 - **Session 1 (90 min):** Discovery Mindset & Elicitation — how to interview stakeholders before touching configuration.
 - **Session 2 (2 hr):** The Discovery Framework End-to-End — participants run discovery against this dataset.
 - **Session 3 (90 min):** From Discovery to Configuration — facilitator builds a Space live while participants watch and test.
@@ -87,7 +87,7 @@ Create a single Genie Space with all 6 tables added. No initial configuration. T
 4. **SQL queries & functions** — saved CASE statements for reusable bucketing logic (e.g., high-dollar vs low-dollar)
 5. **Metric views** — attach the governed `claims_metrics` metric view
 
-See `fixes/metric_view.sql` for the one UC-level asset (the metric view). All other fixes are applied in the Space itself — exact paste text and expected before/after values are in the Session 0 Instructor Guide.
+The `claims_metrics` metric view is pre-deployed by `setup.sql`, so Beat 5 is just "add the existing metric view to the Space." All other fixes are applied in the Space itself — exact paste text and expected before/after values are in the Session 0 Instructor Guide.
 
 ## Metric View: `claims_metrics`
 
