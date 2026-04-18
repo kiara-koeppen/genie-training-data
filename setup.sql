@@ -1,17 +1,22 @@
 -- Genie Space Training Data Setup Script — BARE STATE
 -- Healthcare Claims Analytics
 --
--- This script deploys the UNDERCONFIGURED version of the training data.
--- During Session 0's progressive demo, the instructor runs fix scripts
--- from /fixes/ to improve the Space one beat at a time.
+-- This script deploys the UNDERCONFIGURED version of the training data plus
+-- the governed metric view. During Session 0's progressive demo, the instructor
+-- layers Space-level configuration (text instructions, joins, column
+-- descriptions, SQL functions, metric view) one beat at a time.
 --
--- What's intentionally missing (by design):
---   - No table or column descriptions (forces descriptions fix in Beat 1)
---   - No primary keys or foreign keys (forces join fix in Beat 2)
---   - Foreign key columns renamed to non-obvious healthcare shortnames
---     (mbr_id, rendering_prov_id, svc_location_id, insurance_id) so Genie
---     can't guess the join target from column name alone
---   - No metric view (added in Beat 5)
+-- What's intentionally missing / trapped (by design):
+--   - No table or column descriptions in UC (all context lives in the Space)
+--   - No primary keys or foreign keys
+--   - FK columns renamed to non-obvious shortnames (mbr_id, rendering_prov_id,
+--     svc_location_id, insurance_id) so Genie can't guess joins from names
+--   - Beat 2 trap — members table uses `subscriber_num` (no name overlap
+--     with patients.patient_id), and claims has a DECOY `member_num` column
+--     (MEM-prefix, out-of-range values) that tempts the wrong join
+--   - Beat 3 trap — `aa_ind` (auto-adjudicated indicator) replaces
+--     `first_pass_rate` as a column name; Genie can't map it to the
+--     business concept without an explicit column description
 --
 -- Data calibration (intentional skew for demo impact):
 --   - Pharmacy: ~20% of claims at ~60% denial rate (was 10% / 40%)
@@ -147,17 +152,24 @@ FROM range(1, 5001) t(id);
 -- MEMBERS (insurance enrollment records — distractor table for Beat 2)
 -- Represents insurance member records, which are distinct from clinical patient
 -- records. Each patient has a corresponding member record with plan info.
--- member_id uses a MEM- prefix format so its values do NOT match any other
--- table by direct value, forcing Genie to need an explicit join path:
---   claims -> patients (via mbr_id = patient_id)
---   patients -> members (via patient_id = patient_id)
--- This is the Beat 2 failure moment: "denial rate by plan type" requires
--- going through patients to get to members, and Genie can't guess that path.
+--
+-- Beat 2 traps (both intentional):
+--   1. No column name overlap with patients or claims. The link to patients
+--      is `members.subscriber_num = patients.patient_id` — values match,
+--      but the column names don't, so Genie can't infer the bridge.
+--   2. member_id uses a MEM- prefix format. Combined with the claims.member_num
+--      DECOY column (MEM- prefix, out-of-range values), Genie's first guess
+--      is likely `claims.member_num = members.member_id` — which returns 0
+--      rows because the ranges don't overlap.
+--
+-- Correct 2-hop path (what the Joins tab fix should declare):
+--   claims.mbr_id = patients.patient_id
+--   patients.patient_id = members.subscriber_num
 -- ============================================================================
 
 CREATE OR REPLACE TABLE genie_training.claims_analytics.members (
   member_id STRING,
-  patient_id INT,
+  subscriber_num INT,
   plan_type STRING,
   plan_tier STRING,
   enrollment_date DATE,
@@ -167,7 +179,7 @@ CREATE OR REPLACE TABLE genie_training.claims_analytics.members (
 INSERT INTO genie_training.claims_analytics.members
 SELECT
   concat('MEM-', lpad(cast(id as string), 7, '0')) as member_id,
-  id as patient_id,
+  id as subscriber_num,
   CASE
     WHEN abs(hash(id + 3000)) % 100 < 45 THEN 'Commercial'
     WHEN abs(hash(id + 3000)) % 100 < 70 THEN 'Medicare Advantage'
@@ -202,7 +214,7 @@ FROM range(1, 5001) t(id);
 --   Denial rate (all types, no exclusions):          ~18-19% (inflated, demo)
 --   Pharmacy denial rate:                            ~60% (drives inflation)
 --   Pharmacy share of total claims:                  ~20%
---   First-pass rate:                                 ~94.2%
+--   Auto-adjudicated (aa_ind='Y') / first-pass rate: ~94.2%
 --   Dates: 18 months of data from Jan 2025
 -- ============================================================================
 
@@ -215,14 +227,15 @@ CREATE OR REPLACE TABLE genie_training.claims_analytics.claims (
   appeal_decision STRING,
   paid_amount DECIMAL(12,2),
   billed_amount DECIMAL(12,2),
-  first_pass_rate STRING,
+  aa_ind STRING,
   voided_flag STRING,
   test_flag STRING,
   service_line_code STRING,
   mbr_id INT,
   rendering_prov_id INT,
   svc_location_id INT,
-  insurance_id INT
+  insurance_id INT,
+  member_num STRING
 );
 
 INSERT INTO genie_training.claims_analytics.claims
@@ -271,7 +284,10 @@ SELECT
     WHEN abs(hash(id + 800)) % 100 < 30 THEN round(5000 + cast(abs(hash(id + 850)) % 10000 as decimal(12,2)), 2)
     ELSE round(300 + cast(abs(hash(id + 850)) % 4700 as decimal(12,2)), 2)
   END as billed_amount,
-  CASE WHEN abs(hash(id + 900)) % 1000 < 942 THEN 'Y' ELSE 'N' END as first_pass_rate,
+  -- aa_ind: "auto-adjudicated indicator" (Y/N). Beat 3 trap — cryptic name
+  -- that Genie can't map to the business concept "first-pass rate" without
+  -- an explicit column description in the Space.
+  CASE WHEN abs(hash(id + 900)) % 1000 < 942 THEN 'Y' ELSE 'N' END as aa_ind,
   CASE WHEN abs(hash(id + 1000)) % 100 < 1 THEN 'Y' ELSE 'N' END as voided_flag,
   CASE WHEN abs(hash(id + 1100)) % 200 < 1 THEN 'Y' ELSE 'N' END as test_flag,
   CASE
@@ -288,7 +304,14 @@ SELECT
   1 + cast(abs(hash(id + 1300)) % 5000 as int) as mbr_id,
   1 + cast(abs(hash(id + 1400)) % 15 as int) as rendering_prov_id,
   1 + cast(abs(hash(id + 1500)) % 10 as int) as svc_location_id,
-  1 + cast(abs(hash(id + 1600)) % 10 as int) as insurance_id
+  1 + cast(abs(hash(id + 1600)) % 10 as int) as insurance_id,
+  -- member_num: Beat 2 DECOY. Looks like a member identifier (MEM- prefix)
+  -- but values are in an out-of-range space (9000001-9050000) that does NOT
+  -- overlap with members.member_id (0000001-0005000). Genie's first-guess
+  -- join `claims.member_num = members.member_id` returns 0 rows. The correct
+  -- path goes through patients via `claims.mbr_id = patients.patient_id`
+  -- then `patients.patient_id = members.subscriber_num`.
+  concat('MEM-', lpad(cast(9000000 + cast(abs(hash(id + 1700)) % 50000 as int) as string), 7, '0')) as member_num
 FROM range(1, 50001) t(id);
 
 -- ============================================================================
@@ -371,8 +394,8 @@ AS $$
       expr: COUNT(1) FILTER (WHERE source.initial_decision = 'DENIED' AND (source.appeal_decision IS NULL OR source.appeal_decision = 'UPHELD') AND source.claim_type IN ('Professional', 'Facility')) * 100.0 / NULLIF(COUNT(1) FILTER (WHERE source.claim_type IN ('Professional', 'Facility')), 0)
       comment: "Net denial rate — claims that were denied and stayed denied (appeal not filed, or appeal upheld). This is the metric Operations tracks for revenue impact. Excludes Pharmacy. Expected ~7.2%."
     - name: First Pass Rate
-      expr: COUNT(1) FILTER (WHERE source.first_pass_rate = 'Y') * 100.0 / COUNT(1)
-      comment: "Percentage of claims passing all edits on first submission. Expected ~94.2%."
+      expr: COUNT(1) FILTER (WHERE source.aa_ind = 'Y') * 100.0 / COUNT(1)
+      comment: "Percentage of claims passing all edits on first submission (aa_ind = Y). Expected ~94.2%."
     - name: Appeal Overturn Rate
       expr: COUNT(1) FILTER (WHERE source.appeal_decision = 'OVERTURNED') * 100.0 / NULLIF(COUNT(1) FILTER (WHERE source.appeal_decision IS NOT NULL), 0)
       comment: "Percentage of filed appeals that were overturned"

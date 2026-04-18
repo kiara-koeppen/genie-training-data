@@ -145,10 +145,10 @@ claims (fact table)
   -> payers       (via insurance_id = payer_id)
 
 members
-  -> patients     (via patient_id)
+  -> patients     (via subscriber_num = patient_id)
 ```
 
-The `members` table uses opaque `MEM-XXXXX` IDs that don't line up with any claims column — this is intentional, to force an explicit join declaration during Beat 2 of Session 0.
+The `members` table uses `subscriber_num` (no name overlap with `patients.patient_id`) plus `MEM-`-prefixed `member_id` values. The claims table also carries a decoy `member_num` column (MEM-prefixed, out-of-range values) that tempts Genie toward the wrong join — this is intentional, to force explicit join declarations during Beat 2.
 
 ### Key Columns (claims table)
 
@@ -162,7 +162,7 @@ The `members` table uses opaque `MEM-XXXXX` IDs that don't line up with any clai
 | `appeal_decision` | OVERTURNED, UPHELD, or NULL |
 | `paid_amount` | Amount paid (0 for denied, NULL for pending) |
 | `billed_amount` | Amount billed by provider (long-tailed distribution) |
-| `first_pass_rate` | Y = clean claim (passed all edits), N = required rework |
+| `aa_ind` | Auto-adjudicated indicator. Y = claim passed all edits on first submission (first-pass), N = required rework. *Beat 3 trap — cryptic column name.* |
 | `voided_flag` | Y = voided, N = active |
 | `test_flag` | Y = test claim, N = real |
 | `service_line_code` | Cardiovascular Services, Orthopedics, Primary Care, etc. |
@@ -170,6 +170,7 @@ The `members` table uses opaque `MEM-XXXXX` IDs that don't line up with any clai
 | `rendering_prov_id` | FK to providers.provider_id |
 | `svc_location_id` | FK to facilities.facility_id |
 | `insurance_id` | FK to payers.payer_id |
+| `member_num` | *Beat 2 decoy.* Looks like `members.member_id` but values live in an out-of-range space so the "obvious" join returns 0 rows. |
 
 ## License
 
