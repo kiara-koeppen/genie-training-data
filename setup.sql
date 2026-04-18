@@ -1,39 +1,47 @@
--- Genie Space Training Data Setup Script
+-- Genie Space Training Data Setup Script — BARE STATE
 -- Healthcare Claims Analytics
 --
--- This script creates synthetic claims data for the Genie Space training workshop.
--- The data is calibrated to match the training examples:
---   - Denial rate (Prof + Facility, governed): ~8.2%
---   - Denial rate (all claim types, unfiltered): ~11-12%
---   - Pharmacy denial rate: ~40% (intentionally high to demo metric view value)
---   - First-pass rate: ~94.2%
---   - 50,000 claims across 18 months
---   - Healthcare facility names, payer names, service lines
+-- This script deploys the UNDERCONFIGURED version of the training data.
+-- During Session 0's progressive demo, the instructor runs fix scripts
+-- from /fixes/ to improve the Space one beat at a time.
+--
+-- What's intentionally missing (by design):
+--   - No table or column descriptions (forces descriptions fix in Beat 1)
+--   - No primary keys or foreign keys (forces join fix in Beat 2)
+--   - Foreign key columns renamed to non-obvious healthcare shortnames
+--     (mbr_id, rendering_prov_id, svc_location_id, insurance_id) so Genie
+--     can't guess the join target from column name alone
+--   - No metric view (added in Beat 5)
+--
+-- Data calibration (intentional skew for demo impact):
+--   - Pharmacy: ~20% of claims at ~60% denial rate (was 10% / 40%)
+--   - Prof + Facility: ~8.2% denial rate
+--   - Naive unfiltered denial rate: ~18-19% ("woah this is way off")
+--   - Governed denial rate (Prof + Facility only): ~8.2%
+--   - Gap: ~10 percentage points, demonstrating metric view value
 --
 -- Prerequisites:
---   1. Create the catalog and schema before running this script:
---      CREATE CATALOG IF NOT EXISTS genie_training;
---      CREATE SCHEMA IF NOT EXISTS genie_training.claims_analytics;
---   2. Update all references below from 'ih_genie_training' to your catalog name
---   3. Run this script on a SQL warehouse or cluster with access to the catalog
+--   1. CREATE CATALOG IF NOT EXISTS genie_training;
+--   2. CREATE SCHEMA IF NOT EXISTS genie_training.claims_analytics;
+--   3. Replace 'genie_training' below if your catalog name is different.
 --
 -- Usage:
---   Run each statement one at a time in a Databricks SQL editor,
---   or put each statement in its own notebook cell
+--   Run each statement one at a time in a Databricks SQL editor, or put
+--   each statement in its own notebook cell.
 
 -- ============================================================================
 -- FACILITIES
 -- ============================================================================
 
-CREATE OR REPLACE TABLE ih_genie_training.claims_analytics.facilities (
+CREATE OR REPLACE TABLE genie_training.claims_analytics.facilities (
   facility_id INT NOT NULL,
-  facility_name STRING COMMENT 'Full name of the facility where service was rendered. Common abbreviations: IMC = Intermountain Medical Center, LDS = LDS Hospital, PCMC = Primary Childrens Medical Center',
-  facility_type STRING COMMENT 'Type of facility: Hospital, Clinic, Urgent Care, Specialty Center',
+  facility_name STRING,
+  facility_type STRING,
   city STRING,
-  state_code STRING COMMENT 'Two-letter state code. Service area includes UT, ID, NV, CO, MT, WY, KS, NE'
+  state_code STRING
 );
 
-INSERT INTO ih_genie_training.claims_analytics.facilities VALUES
+INSERT INTO genie_training.claims_analytics.facilities VALUES
 (1, 'Intermountain Medical Center', 'Hospital', 'Murray', 'UT'),
 (2, 'LDS Hospital', 'Hospital', 'Salt Lake City', 'UT'),
 (3, 'Primary Childrens Medical Center', 'Hospital', 'Salt Lake City', 'UT'),
@@ -47,16 +55,22 @@ INSERT INTO ih_genie_training.claims_analytics.facilities VALUES
 
 -- ============================================================================
 -- PAYERS
+-- Note: "BCBS of Utah" is stored as "BCBSU" with no "Blue Cross" substring
+-- so Genie can't fuzzy-match "Blue Cross" without an explicit synonym.
+-- "Regence BlueCross BlueShield" is kept as a distractor — Regence is the
+-- Idaho/Oregon Blue Cross plan, NOT the Utah plan. When a user asks about
+-- "Blue Cross" denials, Genie will likely pick Regence (wrong) unless the
+-- synonym "Blue Cross" -> "BCBSU" is added to the Knowledge Store.
 -- ============================================================================
 
-CREATE OR REPLACE TABLE ih_genie_training.claims_analytics.payers (
+CREATE OR REPLACE TABLE genie_training.claims_analytics.payers (
   payer_id INT NOT NULL,
-  payer_name STRING COMMENT 'Full payer name. Common abbreviations: Blue Cross = BCBS of Utah, United = UnitedHealthcare',
-  payer_type STRING COMMENT 'Payer category: Commercial, Medicare, Medicaid, Self-Pay'
+  payer_name STRING,
+  payer_type STRING
 );
 
-INSERT INTO ih_genie_training.claims_analytics.payers VALUES
-(1, 'BCBS of Utah', 'Commercial'),
+INSERT INTO genie_training.claims_analytics.payers VALUES
+(1, 'BCBSU', 'Commercial'),
 (2, 'UnitedHealthcare', 'Commercial'),
 (3, 'Aetna', 'Commercial'),
 (4, 'Cigna', 'Commercial'),
@@ -71,14 +85,14 @@ INSERT INTO ih_genie_training.claims_analytics.payers VALUES
 -- PROVIDERS
 -- ============================================================================
 
-CREATE OR REPLACE TABLE ih_genie_training.claims_analytics.providers (
+CREATE OR REPLACE TABLE genie_training.claims_analytics.providers (
   provider_id INT NOT NULL,
-  provider_name STRING COMMENT 'Full name of the rendering provider',
-  provider_specialty STRING COMMENT 'Medical specialty. Common abbreviations: cardiology = Cardiovascular Services',
-  provider_npi STRING COMMENT 'National Provider Identifier (10-digit)'
+  provider_name STRING,
+  provider_specialty STRING,
+  provider_npi STRING
 );
 
-INSERT INTO ih_genie_training.claims_analytics.providers VALUES
+INSERT INTO genie_training.claims_analytics.providers VALUES
 (1, 'Dr. Sarah Mitchell', 'Cardiovascular Services', '1234567890'),
 (2, 'Dr. James Chen', 'Orthopedic Surgery', '1234567891'),
 (3, 'Dr. Maria Rodriguez', 'Internal Medicine', '1234567892'),
@@ -99,14 +113,14 @@ INSERT INTO ih_genie_training.claims_analytics.providers VALUES
 -- PATIENTS (5,000 synthetic patients)
 -- ============================================================================
 
-CREATE OR REPLACE TABLE ih_genie_training.claims_analytics.patients (
+CREATE OR REPLACE TABLE genie_training.claims_analytics.patients (
   patient_id INT NOT NULL,
-  patient_age_group STRING COMMENT 'Age band: 0-17, 18-34, 35-49, 50-64, 65+',
-  patient_state STRING COMMENT 'State of patient residence',
-  patient_gender STRING COMMENT 'M or F'
+  patient_age_group STRING,
+  patient_state STRING,
+  patient_gender STRING
 );
 
-INSERT INTO ih_genie_training.claims_analytics.patients
+INSERT INTO genie_training.claims_analytics.patients
 SELECT
   id as patient_id,
   CASE
@@ -130,40 +144,93 @@ SELECT
 FROM range(1, 5001) t(id);
 
 -- ============================================================================
+-- MEMBERS (insurance enrollment records — distractor table for Beat 2)
+-- Represents insurance member records, which are distinct from clinical patient
+-- records. Each patient has a corresponding member record with plan info.
+-- member_id uses a MEM- prefix format so its values do NOT match any other
+-- table by direct value, forcing Genie to need an explicit join path:
+--   claims -> patients (via mbr_id = patient_id)
+--   patients -> members (via patient_id = patient_id)
+-- This is the Beat 2 failure moment: "denial rate by plan type" requires
+-- going through patients to get to members, and Genie can't guess that path.
+-- ============================================================================
+
+CREATE OR REPLACE TABLE genie_training.claims_analytics.members (
+  member_id STRING,
+  patient_id INT,
+  plan_type STRING,
+  plan_tier STRING,
+  enrollment_date DATE,
+  effective_date DATE
+);
+
+INSERT INTO genie_training.claims_analytics.members
+SELECT
+  concat('MEM-', lpad(cast(id as string), 7, '0')) as member_id,
+  id as patient_id,
+  CASE
+    WHEN abs(hash(id + 3000)) % 100 < 45 THEN 'Commercial'
+    WHEN abs(hash(id + 3000)) % 100 < 70 THEN 'Medicare Advantage'
+    WHEN abs(hash(id + 3000)) % 100 < 90 THEN 'Medicaid Managed Care'
+    ELSE 'Self-Funded'
+  END as plan_type,
+  CASE
+    WHEN abs(hash(id + 3000)) % 100 < 45 THEN
+      CASE
+        WHEN abs(hash(id + 3100)) % 100 < 20 THEN 'Bronze'
+        WHEN abs(hash(id + 3100)) % 100 < 55 THEN 'Silver'
+        WHEN abs(hash(id + 3100)) % 100 < 85 THEN 'Gold'
+        ELSE 'Platinum'
+      END
+    ELSE NULL
+  END as plan_tier,
+  date_add('2020-01-01', cast(abs(hash(id + 3200)) % 1500 as int)) as enrollment_date,
+  date_add('2024-01-01', cast(abs(hash(id + 3300)) % 365 as int)) as effective_date
+FROM range(1, 5001) t(id);
+
+-- ============================================================================
 -- CLAIMS (50,000 synthetic claims)
+-- FK columns renamed to non-obvious healthcare shortnames so Genie cannot
+-- guess joins from column names alone:
+--   patient_id    -> mbr_id               (member ID, common in healthcare)
+--   provider_id   -> rendering_prov_id    (rendering provider)
+--   facility_id   -> svc_location_id      (service location)
+--   payer_id      -> insurance_id         (insurance plan)
+--
 -- Calibrated to produce:
---   Denial rate (Prof + Facility, excl voided/test): ~8.2% (governed metric)
---   Denial rate (all types, no exclusions): ~11-12% (inflated, for demo)
---   Pharmacy denial rate: ~40% (drives the inflation)
---   First-pass rate: ~94.2%
+--   Denial rate (Prof + Facility, excl voided/test): ~8.2% (governed)
+--   Denial rate (all types, no exclusions):          ~18-19% (inflated, demo)
+--   Pharmacy denial rate:                            ~60% (drives inflation)
+--   Pharmacy share of total claims:                  ~20%
+--   First-pass rate:                                 ~94.2%
 --   Dates: 18 months of data from Jan 2025
 -- ============================================================================
 
-CREATE OR REPLACE TABLE ih_genie_training.claims_analytics.claims (
-  claim_id STRING COMMENT 'Unique identifier for each claim submission',
-  claim_type STRING COMMENT 'Type of claim: Professional, Facility, or Pharmacy',
-  receipt_date DATE COMMENT 'Date the claim was received. Used as the basis for turnaround time calculations',
-  adjudication_date DATE COMMENT 'Date the claim was adjudicated. NULL for claims still pending',
-  initial_decision STRING COMMENT 'The adjudication outcome at first review. Values: APPROVED, DENIED, PENDING, PARTIAL. Does not reflect appeal outcomes',
-  appeal_decision STRING COMMENT 'Outcome after appeal if applicable. Values: OVERTURNED, UPHELD, NULL (no appeal filed)',
-  paid_amount DECIMAL(12,2) COMMENT 'Total amount paid on the claim after all adjustments. Zero for denied claims. NULL for claims still in adjudication',
-  billed_amount DECIMAL(12,2) COMMENT 'Total amount billed by the provider',
-  first_pass_rate STRING COMMENT 'Whether the claim passed all edits on first submission. Y = clean claim, N = required rework',
-  voided_flag STRING COMMENT 'Y if claim was voided, N if active. Voided claims should be excluded from most metrics',
-  test_flag STRING COMMENT 'Y if this is a test claim, N if real. Test claims should be excluded from all metrics',
-  service_line_code STRING COMMENT 'Service line category for the encounter',
-  patient_id INT,
-  provider_id INT,
-  facility_id INT,
-  payer_id INT
+CREATE OR REPLACE TABLE genie_training.claims_analytics.claims (
+  claim_id STRING,
+  claim_type STRING,
+  receipt_date DATE,
+  adjudication_date DATE,
+  initial_decision STRING,
+  appeal_decision STRING,
+  paid_amount DECIMAL(12,2),
+  billed_amount DECIMAL(12,2),
+  first_pass_rate STRING,
+  voided_flag STRING,
+  test_flag STRING,
+  service_line_code STRING,
+  mbr_id INT,
+  rendering_prov_id INT,
+  svc_location_id INT,
+  insurance_id INT
 );
 
-INSERT INTO ih_genie_training.claims_analytics.claims
+INSERT INTO genie_training.claims_analytics.claims
 SELECT
   concat('CLM-', lpad(cast(id as string), 7, '0')) as claim_id,
   CASE
-    WHEN abs(hash(id)) % 100 < 45 THEN 'Professional'
-    WHEN abs(hash(id)) % 100 < 90 THEN 'Facility'
+    WHEN abs(hash(id)) % 100 < 40 THEN 'Professional'
+    WHEN abs(hash(id)) % 100 < 80 THEN 'Facility'
     ELSE 'Pharmacy'
   END as claim_type,
   date_add('2025-01-01', cast(abs(hash(id + 100)) % 450 as int)) as receipt_date,
@@ -171,30 +238,39 @@ SELECT
     WHEN abs(hash(id + 200)) % 100 < 2 THEN NULL
     ELSE date_add(date_add('2025-01-01', cast(abs(hash(id + 100)) % 450 as int)), 3 + cast(abs(hash(id + 300)) % 19 as int))
   END as adjudication_date,
-  -- initial_decision: Pharmacy claims get ~40% denial rate to create a visible
-  -- contrast vs Professional/Facility at ~8.2%. This makes the unfiltered
-  -- denial rate ~11-12%, demonstrating why metric view exclusions matter.
+  -- initial_decision: Pharmacy claims get ~60% denial rate to create a
+  -- dramatic contrast vs Professional/Facility at ~8.2%. This makes the
+  -- unfiltered denial rate ~18-19%, demonstrating why metric view
+  -- exclusions matter. Gap is ~10pt ("woah that's way off").
   CASE
     WHEN abs(hash(id + 200)) % 100 < 2 THEN 'PENDING'
-    WHEN abs(hash(id)) % 100 >= 90 AND abs(hash(id + 400)) % 100 < 40 THEN 'DENIED'
-    WHEN abs(hash(id)) % 100 < 90 AND abs(hash(id + 400)) % 1000 < 82 THEN 'DENIED'
+    WHEN abs(hash(id)) % 100 >= 80 AND abs(hash(id + 400)) % 100 < 60 THEN 'DENIED'
+    WHEN abs(hash(id)) % 100 < 80 AND abs(hash(id + 400)) % 1000 < 82 THEN 'DENIED'
     WHEN abs(hash(id + 400)) % 1000 < 112 THEN 'PARTIAL'
     ELSE 'APPROVED'
   END as initial_decision,
   CASE
-    WHEN abs(hash(id)) % 100 >= 90 AND abs(hash(id + 400)) % 100 < 40 AND abs(hash(id + 500)) % 100 < 30 THEN
+    WHEN abs(hash(id)) % 100 >= 80 AND abs(hash(id + 400)) % 100 < 60 AND abs(hash(id + 500)) % 100 < 30 THEN
       CASE WHEN abs(hash(id + 600)) % 100 < 40 THEN 'OVERTURNED' ELSE 'UPHELD' END
-    WHEN abs(hash(id)) % 100 < 90 AND abs(hash(id + 400)) % 1000 < 82 AND abs(hash(id + 500)) % 100 < 30 THEN
+    WHEN abs(hash(id)) % 100 < 80 AND abs(hash(id + 400)) % 1000 < 82 AND abs(hash(id + 500)) % 100 < 30 THEN
       CASE WHEN abs(hash(id + 600)) % 100 < 40 THEN 'OVERTURNED' ELSE 'UPHELD' END
     ELSE NULL
   END as appeal_decision,
   CASE
-    WHEN abs(hash(id)) % 100 >= 90 AND abs(hash(id + 400)) % 100 < 40 THEN 0.00
-    WHEN abs(hash(id)) % 100 < 90 AND abs(hash(id + 400)) % 1000 < 82 THEN 0.00
+    WHEN abs(hash(id)) % 100 >= 80 AND abs(hash(id + 400)) % 100 < 60 THEN 0.00
+    WHEN abs(hash(id)) % 100 < 80 AND abs(hash(id + 400)) % 1000 < 82 THEN 0.00
     WHEN abs(hash(id + 200)) % 100 < 2 THEN NULL
     ELSE round(200 + cast(abs(hash(id + 700)) % 4800 as decimal(12,2)), 2)
   END as paid_amount,
-  round(300 + cast(abs(hash(id + 800)) % 7700 as decimal(12,2)), 2) as billed_amount,
+  -- billed_amount: long-tail distribution to support high-dollar claim analysis
+  --   70% of claims: $300-$5,000  (standard/low)
+  --   25% of claims: $5,000-$15,000 (upper middle)
+  --    5% of claims: $15,000-$75,000 (high-dollar outliers, e.g., inpatient stays)
+  CASE
+    WHEN abs(hash(id + 800)) % 100 < 5 THEN round(15000 + cast(abs(hash(id + 850)) % 60000 as decimal(12,2)), 2)
+    WHEN abs(hash(id + 800)) % 100 < 30 THEN round(5000 + cast(abs(hash(id + 850)) % 10000 as decimal(12,2)), 2)
+    ELSE round(300 + cast(abs(hash(id + 850)) % 4700 as decimal(12,2)), 2)
+  END as billed_amount,
   CASE WHEN abs(hash(id + 900)) % 1000 < 942 THEN 'Y' ELSE 'N' END as first_pass_rate,
   CASE WHEN abs(hash(id + 1000)) % 100 < 1 THEN 'Y' ELSE 'N' END as voided_flag,
   CASE WHEN abs(hash(id + 1100)) % 200 < 1 THEN 'Y' ELSE 'N' END as test_flag,
@@ -209,169 +285,26 @@ SELECT
     WHEN abs(hash(id + 1200)) % 100 < 93 THEN 'General Surgery'
     ELSE 'Pulmonology'
   END as service_line_code,
-  1 + cast(abs(hash(id + 1300)) % 5000 as int) as patient_id,
-  1 + cast(abs(hash(id + 1400)) % 15 as int) as provider_id,
-  1 + cast(abs(hash(id + 1500)) % 10 as int) as facility_id,
-  1 + cast(abs(hash(id + 1600)) % 10 as int) as payer_id
+  1 + cast(abs(hash(id + 1300)) % 5000 as int) as mbr_id,
+  1 + cast(abs(hash(id + 1400)) % 15 as int) as rendering_prov_id,
+  1 + cast(abs(hash(id + 1500)) % 10 as int) as svc_location_id,
+  1 + cast(abs(hash(id + 1600)) % 10 as int) as insurance_id
 FROM range(1, 50001) t(id);
 
 -- ============================================================================
--- PRIMARY KEYS
+-- VERIFICATION (optional — run to confirm the intentional skew landed)
 -- ============================================================================
 
-ALTER TABLE ih_genie_training.claims_analytics.facilities ADD CONSTRAINT pk_facilities PRIMARY KEY (facility_id);
-ALTER TABLE ih_genie_training.claims_analytics.payers ADD CONSTRAINT pk_payers PRIMARY KEY (payer_id);
-ALTER TABLE ih_genie_training.claims_analytics.providers ADD CONSTRAINT pk_providers PRIMARY KEY (provider_id);
-ALTER TABLE ih_genie_training.claims_analytics.patients ADD CONSTRAINT pk_patients PRIMARY KEY (patient_id);
-
--- ============================================================================
--- FOREIGN KEYS
--- ============================================================================
-
-ALTER TABLE ih_genie_training.claims_analytics.claims ADD CONSTRAINT fk_claims_patients FOREIGN KEY (patient_id) REFERENCES ih_genie_training.claims_analytics.patients(patient_id);
-ALTER TABLE ih_genie_training.claims_analytics.claims ADD CONSTRAINT fk_claims_providers FOREIGN KEY (provider_id) REFERENCES ih_genie_training.claims_analytics.providers(provider_id);
-ALTER TABLE ih_genie_training.claims_analytics.claims ADD CONSTRAINT fk_claims_facilities FOREIGN KEY (facility_id) REFERENCES ih_genie_training.claims_analytics.facilities(facility_id);
-ALTER TABLE ih_genie_training.claims_analytics.claims ADD CONSTRAINT fk_claims_payers FOREIGN KEY (payer_id) REFERENCES ih_genie_training.claims_analytics.payers(payer_id);
-
--- ============================================================================
--- TABLE-LEVEL COMMENTS
--- ============================================================================
-
-COMMENT ON TABLE ih_genie_training.claims_analytics.facilities IS 'Healthcare facilities where services are rendered. Includes hospitals, clinics, and specialty centers across the service area.';
-COMMENT ON TABLE ih_genie_training.claims_analytics.payers IS 'Insurance payers including commercial carriers, Medicare, Medicaid, and self-pay.';
-COMMENT ON TABLE ih_genie_training.claims_analytics.providers IS 'Rendering providers with name, specialty, and NPI.';
-COMMENT ON TABLE ih_genie_training.claims_analytics.patients IS 'Synthetic patient records with demographics. No real patient data.';
-COMMENT ON TABLE ih_genie_training.claims_analytics.claims IS 'Claims fact table with adjudication outcomes, payment amounts, and quality flags. Joins to patients, providers, facilities, and payers via foreign keys.';
-
--- ============================================================================
--- METRIC VIEW: claims_metrics
--- The governed metrics layer for claims analytics. Encodes standard
--- business definitions (denial rate, first-pass rate, turnaround time, etc.)
--- in one place so every downstream consumer gets the same answers.
--- ============================================================================
-
-CREATE OR REPLACE VIEW ih_genie_training.claims_analytics.claims_metrics
-WITH METRICS
-LANGUAGE YAML
-AS $$
-  version: 1.1
-  comment: "Governed claims analytics metrics. Standard measures for denial rates, first-pass rates, turnaround times, and payment analysis. Excludes voided and test claims globally."
-  source: ih_genie_training.claims_analytics.claims
-  filter: voided_flag = 'N' AND test_flag = 'N'
-
-  joins:
-    - name: patients
-      source: ih_genie_training.claims_analytics.patients
-      on: source.patient_id = patients.patient_id
-    - name: providers
-      source: ih_genie_training.claims_analytics.providers
-      on: source.provider_id = providers.provider_id
-    - name: facilities
-      source: ih_genie_training.claims_analytics.facilities
-      on: source.facility_id = facilities.facility_id
-    - name: payers
-      source: ih_genie_training.claims_analytics.payers
-      on: source.payer_id = payers.payer_id
-
-  dimensions:
-    - name: Claim Type
-      expr: source.claim_type
-      comment: "Professional, Facility, or Pharmacy"
-    - name: Service Line
-      expr: source.service_line_code
-      comment: "Clinical service category: Cardiovascular Services, Orthopedics, Primary Care, etc."
-    - name: Initial Decision
-      expr: source.initial_decision
-      comment: "First adjudication outcome: APPROVED, DENIED, PENDING, PARTIAL"
-    - name: Appeal Decision
-      expr: source.appeal_decision
-      comment: "Appeal outcome if filed: OVERTURNED, UPHELD, or NULL (no appeal)"
-    - name: Receipt Month
-      expr: DATE_TRUNC('MONTH', source.receipt_date)
-      comment: "Month the claim was received"
-    - name: Adjudication Month
-      expr: DATE_TRUNC('MONTH', source.adjudication_date)
-      comment: "Month the claim was adjudicated"
-    - name: Receipt Date
-      expr: source.receipt_date
-      comment: "Date the claim was received"
-    - name: Payer Name
-      expr: payers.payer_name
-      comment: "Insurance payer: BCBS of Utah, UnitedHealthcare, Medicare, etc."
-    - name: Payer Type
-      expr: payers.payer_type
-      comment: "Payer category: Commercial, Medicare, Medicaid, Self-Pay"
-    - name: Facility Name
-      expr: facilities.facility_name
-      comment: "Facility where service was rendered"
-    - name: Facility Type
-      expr: facilities.facility_type
-      comment: "Hospital, Clinic, Urgent Care, or Specialty Center"
-    - name: Facility State
-      expr: facilities.state_code
-      comment: "Two-letter state code of the facility"
-    - name: Provider Name
-      expr: providers.provider_name
-      comment: "Rendering provider full name"
-    - name: Provider Specialty
-      expr: providers.provider_specialty
-      comment: "Medical specialty of the rendering provider"
-    - name: Patient Age Group
-      expr: patients.patient_age_group
-      comment: "Age band: 0-17, 18-34, 35-49, 50-64, 65+"
-    - name: Patient State
-      expr: patients.patient_state
-      comment: "State of patient residence"
-    - name: Patient Gender
-      expr: patients.patient_gender
-      comment: "M or F"
-
-  measures:
-    - name: Total Claims
-      expr: COUNT(1)
-      comment: "Total number of claims (excluding voided and test)"
-    - name: Denied Claims
-      expr: COUNT(1) FILTER (WHERE source.initial_decision = 'DENIED')
-      comment: "Number of claims denied at initial decision"
-    - name: Approved Claims
-      expr: COUNT(1) FILTER (WHERE source.initial_decision = 'APPROVED')
-      comment: "Number of claims approved at initial decision"
-    - name: Denial Rate
-      expr: COUNT(1) FILTER (WHERE source.initial_decision = 'DENIED' AND source.claim_type IN ('Professional', 'Facility')) * 100.0 / NULLIF(COUNT(1) FILTER (WHERE source.claim_type IN ('Professional', 'Facility')), 0)
-      comment: "Governed denial rate for Professional and Facility claims only. Excludes Pharmacy to prevent inflated numbers. Expected ~8.2%"
-    - name: First Pass Rate
-      expr: COUNT(1) FILTER (WHERE source.first_pass_rate = 'Y') * 100.0 / COUNT(1)
-      comment: "Percentage of claims passing all edits on first submission. Expected ~94.2%"
-    - name: Total Paid Amount
-      expr: SUM(source.paid_amount)
-      comment: "Total dollars paid across all claims"
-    - name: Total Billed Amount
-      expr: SUM(source.billed_amount)
-      comment: "Total dollars billed by providers"
-    - name: Payment Ratio
-      expr: SUM(source.paid_amount) / NULLIF(SUM(source.billed_amount), 0)
-      comment: "Ratio of paid to billed amounts"
-    - name: Average Turnaround Days
-      expr: AVG(DATEDIFF(source.adjudication_date, source.receipt_date))
-      comment: "Average days from claim receipt to adjudication"
-    - name: Appeal Overturn Rate
-      expr: COUNT(1) FILTER (WHERE source.appeal_decision = 'OVERTURNED') * 100.0 / NULLIF(COUNT(1) FILTER (WHERE source.appeal_decision IS NOT NULL), 0)
-      comment: "Percentage of filed appeals that were overturned"
-    - name: Average Paid Amount
-      expr: AVG(source.paid_amount)
-      comment: "Average payment per claim"
-$$;
-
--- ============================================================================
--- VERIFICATION
--- ============================================================================
-
--- Run this to verify the data matches training examples:
+-- Naive unfiltered denial rate (should be ~18-19%, "this is way off"):
 -- SELECT
---   round(count(case when initial_decision = 'DENIED' then 1 end) * 100.0 / count(*), 1) as denial_rate_pct,
---   round(count(case when first_pass_rate = 'Y' then 1 end) * 100.0 / count(*), 1) as first_pass_rate_pct,
+--   round(count(case when initial_decision = 'DENIED' then 1 end) * 100.0 / count(*), 1) as naive_denial_rate_pct,
 --   count(*) as total_claims
--- FROM ih_genie_training.claims_analytics.claims
+-- FROM genie_training.claims_analytics.claims;
+--
+-- Governed denial rate (should be ~8.2%, "this is right"):
+-- SELECT
+--   round(count(case when initial_decision = 'DENIED' then 1 end) * 100.0 / count(*), 1) as governed_denial_rate_pct,
+--   count(*) as total_claims
+-- FROM genie_training.claims_analytics.claims
 -- WHERE voided_flag = 'N' AND test_flag = 'N'
 --   AND claim_type IN ('Professional', 'Facility');
--- Expected: denial_rate ~8.2%, first_pass_rate ~94.2%, total_claims ~44,500
